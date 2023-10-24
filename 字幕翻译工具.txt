@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         字幕翻译工具
+// @name         字幕翻译工具4444
 // @namespace    http://your-namespace.com
 // @version      1.0
 // @description  上传SRT格式字幕并进行翻译
@@ -12,17 +12,18 @@
 function sendNextBlock() {
     // 函数内容...
 }
-(function() {
+
+(function () {
     'use strict';
 
     // 定义时间间隔（以毫秒为单位）
     let delayBeforeFirstClick = 2000; // 4秒延迟点击第一个按钮
-    let delayBeforeSecondClick = 10000; // 3秒延迟点击第二个按钮
-    let delayBetweenBlocks = 20000; // 5秒延迟发送下一个字幕块
+    let delayBeforeSecondClick = 15000; // 3秒延迟点击第二个按钮
+    let delayBetweenBlocks = 30000; // 5秒延迟发送下一个字幕块
     const numBlocksPerSend = 5; // 每次发送的字幕块数量
 
-
-
+    // 历史记录
+    const history = [];
 
     // 创建可移动和缩放的窗口
     const windowDiv = document.createElement('div');
@@ -34,33 +35,40 @@ function sendNextBlock() {
     windowDiv.style.height = '600px';
     windowDiv.style.zIndex = '9999';
     windowDiv.style.backgroundColor = 'white';
-    windowDiv.style.overflow = 'auto';
-    windowDiv.style.resize = 'both';
+    windowDiv.style.overflow = 'auto'; // 添加滚动条以便更好地查看内容
+    windowDiv.style.resize = 'both'; // 启用窗口缩放
     windowDiv.style.border = '1px solid #000';
     windowDiv.style.padding = '10px';
+    windowDiv.style.borderRadius = '10px'; // 10px 是圆角的大小，可以根据需要进行调整
 
     // 创建用户界面
     const uiHTML = `
-        <h1>字幕翻译工具</h1>
-        <input type="file" id="subtitleFile" accept=".srt" />
-        <button id="translateButton">上传字幕并翻译</button>
-        <h2>时间间隔设置</h2>
-        <label for="delayFirstClick">第一个按钮延迟（毫秒）:</label>
-        <input type="number" id="delayFirstClick" value="${delayBeforeFirstClick}" />
-        <br>
-        <label for="delaySecondClick">第二个按钮延迟（毫秒）:</label>
-        <input type="number" id="delaySecondClick" value="${delayBeforeSecondClick}" />
-        <br>
-        <label for="delayBetweenBlocks">字幕块间隔（毫秒）:</label>
-        <br>
-        <input type="number" id="delayBetweenBlocks" value="${delayBetweenBlocks}" />
-        <h2>原字幕</h2>
-        <textarea id="originalSubtitle" style="width: 100%; height: 30%; padding: 10px;"></textarea>
-        <textarea id="subtitleBlocks" style="width: 100%; height: 30%; padding: 10px;"></textarea>
-        <h2>翻译后的字幕</h2>
-        <textarea id="translatedSubtitle" style="width: 100%; height: 30%; padding: 10px;"></textarea>
-        <button id="downloadButton">下载翻译后的字幕</button>
-    `;
+    <h1>字幕翻译工具</h1>
+    <h4>翻译进度 <span id="progressInfo">(0/0)</span></h4>
+    <progress id="translationProgress" value="0" max="100" style="width: 100%;"></progress>
+    <input type="file" id="subtitleFile" accept=".srt" />
+    <input type="file" id="subtitleFile" accept=".srt" multiple />
+    <button id="translateButton">上传字幕并翻译</button>
+    <h2>时间间隔设置</h2>
+    <label for="delayFirstClick">第一个按钮延迟（毫秒）:</label>
+    <input type="number" id="delayFirstClick" value="${delayBeforeFirstClick}" />
+    <br>
+    <label for "delaySecondClick">第二个按钮延迟（毫秒）:</label>
+    <input type="number" id="delaySecondClick" value="${delayBeforeSecondClick}" />
+    <br>
+    <label for="delayBetweenBlocks">字幕块间隔（毫秒）:</label>
+    <br>
+    <input type="number" id="delayBetweenBlocks" value="${delayBetweenBlocks}" />
+    <h2>原字幕</h2>
+    <textarea id="originalSubtitle" style="width: 100%; height: 30%; padding: 10px; resize: both; overflow: auto;"></textarea> <!-- 启用缩放 -->
+    <textarea id="subtitleBlocks" style="width: 100%; height: 30%; padding: 10px; resize: both; overflow: auto;"></textarea> <!-- 启用缩放 -->
+    <h2>翻译后的字幕</h2>
+    <textarea id="translatedSubtitle" style="width: 100%; height: 30%; padding: 10px; resize: both; overflow: auto;"></textarea> <!-- 启用缩放 -->
+    <button id="downloadButton">下载翻译后的字幕</button>
+    <h2>历史记录</h2>
+    <textarea id="historyTextarea" style="width: 100%; height: 10%; padding: 10px; resize: both; overflow: auto;"></textarea> <!-- 启用缩放 -->
+`;
+
 
     // 将用户界面添加到窗口
     windowDiv.innerHTML = uiHTML;
@@ -68,6 +76,7 @@ function sendNextBlock() {
 
     // 添加一个用于显示翻译后的字幕的文本框
     const translatedSubtitleTextarea = document.getElementById('translatedSubtitle');
+    const historyTextarea = document.getElementById('historyTextarea');
 
     // 获取 UI 容器
     const uiContainer = document.getElementById('translationWindow');
@@ -75,12 +84,26 @@ function sendNextBlock() {
     let offsetX, offsetY;
 
     uiContainer.addEventListener('mousedown', (e) => {
-        isDragging = true;
+        // 检查鼠标是否在窗口边缘
         const rect = uiContainer.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        const edgeSize = 10; // 设置边缘大小为10px
+
+        if (
+            offsetX < edgeSize || // 左边缘
+            offsetY < edgeSize || // 上边缘
+            rect.width - offsetX < edgeSize || // 右边缘
+            rect.height - offsetY < edgeSize // 下边缘
+        ) {
+            // 如果鼠标在窗口边缘，那么就不执行移动操作
+            return;
+        }
+
+        isDragging = true;
         uiContainer.style.cursor = 'grabbing';
     });
+
 
     document.addEventListener('mousemove', (e) => {
         if (isDragging) {
@@ -113,53 +136,55 @@ function sendNextBlock() {
 
     const delayFirstClickInput = document.getElementById('delayFirstClick');
     delayFirstClickInput.style.border = '1px solid #000';
-    delayFirstClickInput.style.padding = '3px'; // 调整内边距以使其更小巧
+    delayFirstClickInput.style.padding = '3px';
     delayFirstClickInput.style.backgroundColor = '#fff';
     delayFirstClickInput.style.color = '#000';
-    delayFirstClickInput.style.borderRadius = '3px'; // 调整圆角以使其更小巧
+    delayFirstClickInput.style.borderRadius = '3px';
 
     const delaySecondClickInput = document.getElementById('delaySecondClick');
     delaySecondClickInput.style.border = '1px solid #000';
-    delaySecondClickInput.style.padding = '3px'; // 调整内边距以使其更小巧
+    delaySecondClickInput.style.padding = '3px';
     delaySecondClickInput.style.backgroundColor = '#fff';
     delaySecondClickInput.style.color = '#000';
-    delaySecondClickInput.style.borderRadius = '3px'; // 调整圆角以使其更小巧
+    delaySecondClickInput.style.borderRadius = '3px';
 
     const delayBetweenBlocksInput = document.getElementById('delayBetweenBlocks');
     delayBetweenBlocksInput.style.border = '1px solid #000';
-    delayBetweenBlocksInput.style.padding = '3px'; // 调整内边距以使其更小巧
+    delayBetweenBlocksInput.style.padding = '3px';
     delayBetweenBlocksInput.style.backgroundColor = '#fff';
     delayBetweenBlocksInput.style.color = '#000';
-    delayBetweenBlocksInput.style.borderRadius = '3px'; // 调整圆角以使其更小巧
+    delayBetweenBlocksInput.style.borderRadius = '3px';
 
     // 隐藏分割后的字幕块文本框
     const subtitleBlocksTextarea = document.getElementById('subtitleBlocks');
     subtitleBlocksTextarea.style.display = 'none';
 
-
-
     // 函数用于点击最后一个复制按钮
-    function clickLatestCopyButton() {
-        const copyButtons = document.querySelectorAll('button[class*="flex ml-auto gizmo:ml-0"]');
-        if (copyButtons.length > 0) {
-            const latestCopyButton = copyButtons[copyButtons.length - 1];
-            latestCopyButton.click();
-            latestCopyButton.focus(); // 设置焦点在第二个按钮
-            setTimeout(() => pasteFromClipboard(translatedSubtitleTextarea), delayBeforeSecondClick);
+    // 函数用于点击最后一个复制按钮
+    function extractTextFromDOM() {
+        const textContainers = document.querySelectorAll('.markdown.prose');
+        const latestTextContainer = textContainers[textContainers.length - 1];
+        const textContent = latestTextContainer.textContent;
+
+        if (textContent.trim() !== '') {
+            translatedSubtitleTextarea.value += textContent + '\n\n';
             setTimeout(sendNextBlock, delayBetweenBlocks);
+        } else {
+            console.error('无法从DOM中获取文本内容');
         }
     }
 
-    // 函数用于从剪贴板中粘贴内容到文本框
+    // 函数用于从剪贴板中读取文本
     function pasteFromClipboard(textarea) {
         navigator.clipboard.readText()
             .then(clipboardText => {
-                textarea.value += clipboardText + '\n\n';
-            })
+            textarea.value += clipboardText + '\n\n';
+        })
             .catch(error => {
-                console.error('无法从剪贴板中读取文本: ' + error);
-            });
+            console.error('无法从剪贴板中读取文本: ' + error);
+        });
     }
+
 
     // 函数用于将文本内容下载为文件
     function downloadSubtitle() {
@@ -181,11 +206,12 @@ function sendNextBlock() {
 
         if (subtitleFile) {
             const reader = new FileReader();
-            reader.onload = function(event) {
+            reader.onload = function (event) {
                 const subtitleText = event.target.result;
                 const subtitleLines = subtitleText.split('\n'); // 使用单个换行符分割字幕行
 
                 let currentBlock = '';
+                let fileName = subtitleFile.name; // 获取文件名
 
                 document.getElementById('originalSubtitle').value = ''; // 清空原字幕文本框
                 document.getElementById('subtitleBlocks').value = ''; // 清空分割后的字幕文本框
@@ -204,6 +230,12 @@ function sendNextBlock() {
 
                 document.getElementById('originalSubtitle').value = subtitleText; // 显示原字幕
 
+                // 记录历史
+                history.push({ fileName: fileName, status: '进行中', time: new Date().toLocaleString() });
+
+                // 更新历史记录文本框
+                updateHistoryTextarea();
+
                 // 逐个逐个发送字幕块
                 const subtitleBlocks = document.getElementById('subtitleBlocks').value.split('字幕块:\n').filter(block => block.trim() !== '');
                 let currentIndex = 0;
@@ -211,6 +243,12 @@ function sendNextBlock() {
                 function sendNextBlock() {
                     if (currentIndex < subtitleBlocks.length) {
                         const targetTextArea = document.querySelector('#prompt-textarea'); // 使用选择器 #prompt-textarea
+                        // 更新进度条
+                        const progress = document.getElementById('translationProgress');
+                        progress.value = (currentIndex / subtitleBlocks.length) * 100;
+                        // 更新进度信息
+                        const progressInfo = document.getElementById('progressInfo');
+                        progressInfo.textContent = `(${currentIndex}/${subtitleBlocks.length})`;
                         if (targetTextArea) {
                             const blocksToSend = subtitleBlocks.slice(currentIndex, currentIndex + numBlocksPerSend);
                             targetTextArea.value = blocksToSend.join('\n');
@@ -221,13 +259,25 @@ function sendNextBlock() {
                                 const button = document.querySelector('button[data-testid="send-button"]');
                                 if (button) {
                                     button.click();
-                                    setTimeout(clickLatestCopyButton, delayBeforeSecondClick);
+                                    setTimeout(extractTextFromDOM, delayBeforeSecondClick);
                                     currentIndex += numBlocksPerSend;
                                     if (currentIndex < subtitleBlocks.length) {
                                         setTimeout(sendNextBlock, delayBetweenBlocks);
                                     } else {
+                                        setTimeout(() => {
                                         // 所有字幕块发送完成后，下载翻译后的字幕
                                         downloadSubtitle();
+                                        // 记录历史
+                                        history[history.length - 1].status = '完成';
+                                        // 更新历史记录文本框
+                                        updateHistoryTextarea();
+                                        // 重置进度条
+                                        const progress = document.getElementById('translationProgress');
+                                        progress.value = 0;
+                                        // 重置进度信息
+                                        const progressInfo = document.getElementById('progressInfo');
+                                        progressInfo.textContent = `(0/0)`;
+                                        }, delayBetweenBlocks);
                                     }
                                 }
                             }, delayBeforeFirstClick);
@@ -249,15 +299,23 @@ function sendNextBlock() {
     document.getElementById('downloadButton').addEventListener('click', downloadSubtitle);
 
     // 更新时间间隔设置
-    document.getElementById('delayFirstClick').addEventListener('input', function() {
+    document.getElementById('delayFirstClick').addEventListener('input', function () {
         delayBeforeFirstClick = parseInt(this.value);
     });
 
-    document.getElementById('delaySecondClick').addEventListener('input', function() {
+    document.getElementById('delaySecondClick').addEventListener('input', function () {
         delayBeforeSecondClick = parseInt(this.value);
     });
 
-    document.getElementById('delayBetweenBlocks').addEventListener('input', function() {
+    document.getElementById('delayBetweenBlocks').addEventListener('input', function () {
         delayBetweenBlocks = parseInt(this.value);
     });
+
+    // 更新历史记录文本框
+    function updateHistoryTextarea() {
+        historyTextarea.value = '';
+        for (let i = 0; i < history.length; i++) {
+            historyTextarea.value += `[${history[i].fileName} - ${history[i].time}] ${history[i].status}\n`;
+        }
+    }
 })();
